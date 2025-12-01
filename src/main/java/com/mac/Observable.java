@@ -1,0 +1,9 @@
+package com.mac;
+
+public interface Observable<Event> {
+
+    void addObserver(Observer<Event> observer);
+    void removeObserver(Observer<Event> observer);
+    void notifyObservers(Event evt);
+
+}

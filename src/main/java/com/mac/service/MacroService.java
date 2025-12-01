@@ -5,6 +5,7 @@ import com.github.kwhat.jnativehook.NativeHookException;
 import com.mac.ActionType;
 import com.mac.MacroAction;
 import com.mac.MacroRecorder;
+import com.mac.Observer;
 import com.mac.model.Macro;
 
 import java.awt.*;
@@ -119,5 +120,13 @@ public class MacroService {
         } catch (Exception e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    public Macro getMacroByID(String uuid) {
+        return macros.get(UUID.fromString(uuid));
+    }
+
+    public void subscribeForNewMacros(Observer<Macro> observer){
+        recorder.addObserver(observer);
     }
 }

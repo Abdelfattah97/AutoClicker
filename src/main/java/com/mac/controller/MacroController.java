@@ -1,5 +1,6 @@
 package com.mac.controller;
 
+import com.mac.Observer;
 import com.mac.model.Macro;
 import com.mac.service.MacroService;
 
@@ -46,6 +47,9 @@ public class MacroController {
     public List<Macro> listMacros() {
         return service.listMacros();
     }
+    public Macro getMacroById(String uuid){
+        return service.getMacroByID(uuid);
+    }
 
     public void deleteMacro(UUID macroId) {
         service.deleteMacro(macroId);
@@ -57,6 +61,13 @@ public class MacroController {
 
     public void playMacroForTime(UUID macroId, int seconds, int delayMs) {
         service.playMacroForTime(macroId, seconds, delayMs);
+    }
+    public void subscribeForNewMacros(Observer<Macro> observer) {
+        service.subscribeForNewMacros(observer);
+    }
+
+    public void stopPlay() {
+//        service.stopPlay();
     }
 }
 

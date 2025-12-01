@@ -1,6 +1,5 @@
 package com.mac;
 
-import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
@@ -13,15 +12,16 @@ import com.mac.service.NativeListenerService;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class MacroRecorder implements NativeMouseListener, NativeMouseMotionListener, NativeKeyListener {
+public class MacroRecorder implements NativeMouseListener, NativeMouseMotionListener, NativeKeyListener, Observable<Macro> {
     private final List<MacroAction> actions = new CopyOnWriteArrayList<>();
     private long lastTime;
     private boolean isRecording = false;
     private String macroName;
     private NativeListenerService nativeListenerService;
+    private List<Observer<Macro>> observers = new CopyOnWriteArrayList<>();
 
     public MacroRecorder() {
-        nativeListenerService=NativeListenerService.getInstance();
+        nativeListenerService = NativeListenerService.getInstance();
     }
 
     public void startRecording(String name) throws NativeHookException {
@@ -100,6 +100,24 @@ public class MacroRecorder implements NativeMouseListener, NativeMouseMotionList
         macroName = null;
         isRecording = false;
         lastTime = 0;
+        notifyObservers(macro);
         return macro;
+    }
+
+    @Override
+    public void addObserver(Observer<Macro> observer) {
+        this.observers.add(observer);
+    }
+
+    @Override
+    public void removeObserver(Observer<Macro> observer) {
+        this.observers.remove(observer);
+    }
+
+    @Override
+    public void notifyObservers(Macro macro) {
+        for (Observer<Macro> observer : observers) {
+            observer.update(macro);
+        }
     }
 }

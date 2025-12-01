@@ -4,6 +4,7 @@ package com.mac;/*
 
 import com.mac.controller.MacroController;
 import com.mac.service.MacroService;
+import com.mac.service.NativeListenerService;
 
 import javax.swing.*;
 import java.util.*;
@@ -18,11 +19,12 @@ public class AutoClickerApp {
                     break;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         SwingUtilities.invokeLater(() -> {
             MacroController controller = new MacroController(new MacroService());
-            AutoClickerView view = new AutoClickerView(controller);
+            AutoClickerView view = new AutoClickerView(controller, NativeListenerService.getInstance());
             view.setVisible(true);
         });
     }

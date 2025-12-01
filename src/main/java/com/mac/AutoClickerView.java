@@ -1,31 +1,7 @@
-package com.mac;/*
- * AutoClickerApp.java
- *
- * Single-file Java application demonstrating a clean "GUI-only view" that
- * calls a controller in a web-service style (in-process, no HTTP).
- *
- * Structure (all classes are in one file for convenience):
- *  - AutoClickerApp (public) -> starts the GUI
- *  - AutoClickerView         -> Swing-only view layer (calls Controller only)
- *  - MacroController         -> thin controller that exposes methods to the GUI
- *  - MacroService            -> business logic (session, macro storage, play)
- *  - Model classes: Macro, MacroAction, MacroSession
- *
- * Notes about the "contract":
- *  - GUI never contains business logic; it only calls controller methods.
- *  - Controller forwards to service(s). Controller is synchronous and
- *    returns simple DTOs / booleans (like a REST controller would).
- *  - Service contains the implementation (session state, recording stub, play loop).
- *  - No HTTP, no web services — but the call style mirrors a web frontend.
- *
- * How to run:
- *  1. Save this file as AutoClickerApp.java
- *  2. Compile: javac AutoClickerApp.java
- *  3. Run:     java AutoClickerApp
- *
- * Java 8+ recommended. The UI uses the system look-and-feel (Nimbus if available).
- */
+package com.mac;
 
+import com.formdev.flatlaf.FlatLightLaf;
+import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
 import com.mac.controller.MacroController;
@@ -34,374 +10,329 @@ import com.mac.service.NativeListenerService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
-import java.awt.event.*;
 import java.util.List;
-import java.util.*;
-import java.util.concurrent.*;
-import java.awt.Robot;
-import java.awt.event.InputEvent;
 
+public class AutoClickerView extends JFrame implements Observer<Macro>, NativeKeyListener {
 
-/* ==========================
- * GUI (View) Layer
- * - Contains only UI code and calls to MacroController
- * - No business logic inside any listeners except UI-related updates
- * ==========================
- */
+    private final DefaultListModel<Macro> macroListModel = new DefaultListModel<>();
+    private final JList<Macro> macroList = new JList<>(macroListModel);
+    private Macro selectedMacro;
 
-public class AutoClickerView extends JFrame implements NativeKeyListener {
-    private final MacroController controller;
+    private final JButton recordBtn = new JButton("Record (F9)");
+    private final JButton playBtn = new JButton("Play (F8)");
+    private final JButton deleteBtn = new JButton();
+
+    private final JLabel stateBanner = new JLabel("● Idle", SwingConstants.CENTER);
+    private final JTextArea consoleArea = new JTextArea();
+
+    private final MacroController macroController;
     private final NativeListenerService nativeListenerService;
 
-    // Left pane: Macro list + controls
-    private final DefaultListModel<Macro> macroListModel = new DefaultListModel<>();
-    private final JList<Macro> macroJList = new JList<>(macroListModel);
-
-    // Right pane: Auto clicker and macro details
-//    private final JButton manualRecordBtn = new JButton("🟢 Manual Record");
-    private final JButton autoRecordBtn = new JButton("🔴 Start Recording");
-    private final JButton playBtn = new JButton("▶ Play");
-    private final JButton stopPlayBtn = new JButton("■ Stop");
-    private final JButton deleteBtn = new JButton("🗑 Delete");
-
-    private final JRadioButton cyclesRadio = new JRadioButton("Cycles");
-    private final JRadioButton timeRadio = new JRadioButton("Time (sec)");
-    private final JTextField cyclesField = new JTextField("10");
-    private final JTextField timeField = new JTextField("5");
-    private final JTextField delayField = new JTextField("100");
-
-    private final JLabel sessionStateLabel = new JLabel("Session: inactive");
-
-    // Executor for background tasks (playing macros, clicker)
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "background-worker");
-        t.setDaemon(true);
-        return t;
-    });
-
-    // Keep track of a currently running background task future
-    private Future<?> runningTask;
-
-    public AutoClickerView(MacroController controller) {
-        this.controller = controller;
-        this.nativeListenerService = NativeListenerService.getInstance();
+    public AutoClickerView(MacroController macroController, NativeListenerService nativeListenerService) {
+        this.macroController = macroController;
+        macroController.subscribeForNewMacros(this);
+        this.nativeListenerService = nativeListenerService;
         nativeListenerService.addNativeKeyListener(this);
-        setTitle("AutoClicker");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(980, 640);
+        FlatLightLaf.setup();
+        initFrame();
+        initHeader();
+        initBody();
+        setVisible(true);
+    }
+
+    private void initFrame() {
+        setTitle("AutoClicker Pro");
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setSize(1100, 700);
         setLocationRelativeTo(null);
-        setLayout(new BorderLayout(12, 12));
-        ((JComponent) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
-
-        add(buildHeader(), BorderLayout.NORTH);
-        add(buildMainPanel(), BorderLayout.CENTER);
-        add(buildFooter(), BorderLayout.SOUTH);
-
-        refreshMacroList();
-        refreshSessionState();
-        installListeners();
+        setLayout(new BorderLayout());
+        getContentPane().setBackground(new Color(0xE2E8F0)); // slate-200
     }
 
-    private JComponent buildHeader() {
-        JPanel p = new JPanel(new BorderLayout());
-        JLabel title = new JLabel("AutoClicker & Macro Manager");
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 20f));
-        p.add(title, BorderLayout.WEST);
+    private void initHeader() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(new Color(0x1E293B));
+        header.setBorder(BorderFactory.createEmptyBorder(14, 20, 14, 20));
 
-        JLabel sub = new JLabel("Beautiful, simple, and strictly layered");
-        p.add(sub, BorderLayout.EAST);
+        // Icon
+        JLabel icon = new JLabel(new FlatSVGIcon("icons/mouse.svg", 24, 24));
+        icon.setOpaque(false);
+        icon.setBackground(new Color(0x2563EB));
+        icon.setForeground(Color.WHITE);
+        icon.setHorizontalAlignment(SwingConstants.CENTER);
+        icon.setPreferredSize(new Dimension(48, 48));
+        icon.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        icon.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
-        return p;
+        // Text
+        JPanel textPanel = new JPanel(new GridLayout(2, 1));
+        textPanel.setOpaque(false);
+
+        JLabel title = new JLabel("Auto Clicker");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        title.setForeground(Color.WHITE);
+
+        JLabel subtitle = new JLabel("Mouse Auto Clicker");
+        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        subtitle.setForeground(new Color(0x94A3B8));
+
+        textPanel.add(title);
+        textPanel.add(subtitle);
+
+        header.add(icon, BorderLayout.WEST);
+        header.add(textPanel, BorderLayout.CENTER);
+
+        add(header, BorderLayout.NORTH);
     }
 
-    private JComponent buildMainPanel() {
+    private void initBody() {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        split.setResizeWeight(0.35);
-        split.setLeftComponent(buildMacroPanel());
+        split.setDividerSize(6);
+        split.setDividerLocation(350);
+
+        split.setLeftComponent(buildMacroListPanel());
         split.setRightComponent(buildControlPanel());
-        return split;
+
+        add(split, BorderLayout.CENTER);
     }
 
-    private JComponent buildMacroPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createTitledBorder("Macros"));
+    private JPanel buildMacroListPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(Color.WHITE);
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        macroJList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        macroJList.setCellRenderer(new MacroCellRenderer());
+        JLabel title = new JLabel("Available Macros");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        title.setBorder(new EmptyBorder(0, 0, 8, 0));
 
-        JScrollPane scroll = new JScrollPane(macroJList);
+        macroList.setCellRenderer(new MacroCellRenderer());
+        macroList.setFixedCellHeight(60);
+        macroList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        macroList.addListSelectionListener(this::onSelectMacro);
+
+        JScrollPane scroll = new JScrollPane(macroList);
+        scroll.setBorder(BorderFactory.createLineBorder(new Color(0xCBD5E1), 0));
+
+        JPanel buttons = new JPanel(new GridLayout(1, 3, 10, 0));
+        buttons.setBorder(new EmptyBorder(10, 0, 0, 0));
+        buttons.setOpaque(false);
+
+        styleButton(recordBtn, new Color(0xFFFFFF), new Color(0xA8A8AF));
+        styleButton(playBtn, new Color(0x16A34A), Color.WHITE);
+
+        deleteBtn.setIcon(new FlatSVGIcon("icons/trash.svg", 20, 20));
+        deleteBtn.setOpaque(false);
+        deleteBtn.setBorder(null);
+        deleteBtn.setFocusPainted(false);
+        deleteBtn.setContentAreaFilled(false);
+        deleteBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        recordBtn.addActionListener(l -> {
+            toggleRecord();
+        });
+
+        deleteBtn.addActionListener(l -> {
+            macroController.deleteMacro(selectedMacro.getId());
+            macroListModel.removeElement(selectedMacro);
+            selectedMacro = null;
+        });
+
+
+        buttons.add(recordBtn);
+        buttons.add(playBtn);
+        buttons.add(deleteBtn);
+
+        panel.add(title, BorderLayout.NORTH);
         panel.add(scroll, BorderLayout.CENTER);
-
-        JPanel btns = new JPanel(new GridLayout(1, 4, 8, 8));
-//        btns.add(manualRecordBtn);
-        btns.add(autoRecordBtn);
-        btns.add(playBtn);
-        btns.add(deleteBtn);
-        panel.add(btns, BorderLayout.SOUTH);
-
+        panel.add(buttons, BorderLayout.SOUTH);
         return panel;
     }
 
-    private JComponent buildControlPanel() {
+    private void toggleRecord() {
+        if (!macroController.isRecording()) {
+            // Start recording
+            macroController.startAutoRecording();
+            recordBtn.setText("Stop");           // change text
+            setRecordingState(true);             // update banner
+        } else {
+            // Stop recording
+            macroController.stopAutoRecording();
+            recordBtn.setText("Record");         // revert text
+            setRecordingState(false);            // update banner
+        }
+    }
+
+    private void togglePlay() {
+        macroController.stopPlay();
+    }
+
+    private void onSelectMacro(ListSelectionEvent e) {
+        if (!e.getValueIsAdjusting()) { // avoid double events
+            Macro selected = macroList.getSelectedValue();
+            displayMacroDetails(selected);
+            selectedMacro = selected;
+        }
+    }
+
+    private JPanel buildControlPanel() {
         JPanel panel = new JPanel();
+        panel.setBackground(new Color(0xF8FAFC));
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createTitledBorder("Auto Clicker"));
 
-        // Session row
-        JPanel sessionRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        sessionRow.add(sessionStateLabel);
-        panel.add(sessionRow);
 
-        panel.add(Box.createVerticalStrut(8));
+        // State Banner
+        stateBanner.setOpaque(false);
+        stateBanner.setBackground(Color.WHITE);
+        stateBanner.setForeground(new Color(0x475569));
+        stateBanner.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        stateBanner.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // Mode radio
-        cyclesRadio.setSelected(true);
-        ButtonGroup group = new ButtonGroup();
-        group.add(cyclesRadio);
-        group.add(timeRadio);
+        JPanel bannerWrapper = new JPanel(new BorderLayout());
+        bannerWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+        bannerWrapper.setOpaque(false);
+        bannerWrapper.add(stateBanner, BorderLayout.WEST);
 
-        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        modeRow.add(cyclesRadio);
-        modeRow.add(cyclesField);
-        modeRow.add(Box.createHorizontalStrut(12));
-        modeRow.add(timeRadio);
-        modeRow.add(timeField);
-        panel.add(modeRow);
+        panel.add(bannerWrapper);
+        panel.add(Box.createVerticalStrut(20));
 
-        panel.add(Box.createVerticalStrut(8));
+        // Details Console
+        consoleArea.setEditable(false);
+        consoleArea.setBackground(new Color(0x1E293B));
+        consoleArea.setForeground(new Color(0x4ADE80));
+        consoleArea.setFont(new Font("Consolas", Font.PLAIN, 13));
+        JScrollPane scroll = new JScrollPane(consoleArea);
+        scroll.setPreferredSize(new Dimension(0, 280));
+        scroll.setBorder(BorderFactory.createLineBorder(new Color(0x334155), 1));
 
-        // Delay row
-        JPanel delayRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        delayRow.add(new JLabel("Delay ms:"));
-        delayField.setColumns(6);
-        delayRow.add(delayField);
-        panel.add(delayRow);
-
-        panel.add(Box.createVerticalStrut(12));
-
-        JPanel playControls = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        stopPlayBtn.setEnabled(false);
-        playControls.add(stopPlayBtn);
-        playControls.add(new JLabel(" "));
-
-        JPanel macroInfoPanel = new JPanel(new BorderLayout());
-        macroInfoPanel.setBorder(BorderFactory.createTitledBorder("Selected macro info"));
-        JTextArea info = new JTextArea(8, 40);
-        info.setEditable(false);
-        info.setLineWrap(true);
-        info.setWrapStyleWord(true);
-        macroInfoPanel.add(new JScrollPane(info));
-
-        // Update info when selection changes
-        macroJList.addListSelectionListener(e -> {
-            Macro sel = macroJList.getSelectedValue();
-            if (sel == null) info.setText("");
-            else info.setText(sel.detailedString());
-        });
-
-        panel.add(playControls);
-        panel.add(Box.createVerticalStrut(8));
-        panel.add(macroInfoPanel);
-
-        panel.add(Box.createVerticalGlue());
-
+        panel.add(scroll);
         return panel;
     }
 
-    private JComponent buildFooter() {
-        JPanel p = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        p.add(new JLabel("Tip: Manual record checks session state; controller handles logic."));
-        return p;
+    private void styleButton(JButton btn, Color bg, Color fg) {
+        btn.setBackground(bg);
+        btn.setForeground(fg);
+        btn.setFocusPainted(false);
+        btn.setBorder(BorderFactory.createLineBorder(new Color(0xCBD5E1), 0));
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
-    private void installListeners() {
-//        manualRecordBtn.addActionListener(e -> onManualRecord());
-        autoRecordBtn.addActionListener(e -> onAutoRecordToggle());
-        playBtn.addActionListener(e -> onPlaySelected());
-        stopPlayBtn.addActionListener(e -> onStopBackground());
-        deleteBtn.addActionListener(e -> onDeleteSelected());
+    @Override
+    public void update(Macro e) {
+        addMacro(e);
+    }
 
-        // Double-click to play
-        macroJList.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) onPlaySelected();
+    @Override
+    public void nativeKeyTyped(NativeKeyEvent nativeEvent) {
+        switch (nativeEvent.getKeyCode()) {
+            case NativeKeyEvent.VC_F8 -> {
+                togglePlay();
+                break;
             }
-        });
-
-        // Window close: stop background tasks
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                executor.shutdownNow();
+            case NativeKeyEvent.VC_F9 -> {
+                toggleRecord();
+                break;
             }
-        });
-    }
-
-//    private void onManualRecord() {
-//        // GUI only calls controller methods
-//        boolean active = controller.isSessionActive();
-//        if (!active) {
-//            // We can request a name via dialog, but controller handles starting session
-//            String name = JOptionPane.showInputDialog(this, "Enter manual macro name:");
-//            if (name == null || name.trim().isEmpty()) return;
-//
-//            controller.startManualSession();
-//            refreshSessionState();
-//
-//            // Simulate a manual recording dialog: GUI collects minimal input and calls controller to record
-//            JOptionPane.showMessageDialog(this, "Recording... perform your actions now. Click OK to stop.");
-//
-//            // In a real app, the controller/service would hook global listeners and stop on hotkey.
-//            controller.stopManualSessionAndSave(name.trim());
-//            refreshSessionState();
-//            refreshMacroList();
-//
-//            JOptionPane.showMessageDialog(this, "Manual macro saved: " + name);
-//        } else {
-//            JOptionPane.showMessageDialog(this, "A session is already active.");
-//        }
-//    }
-
-    private void onAutoRecordToggle() {
-        // This button starts/stops auto recording using controller
-        if (!controller.isRecording()) {
-            controller.startAutoRecording();
-            autoRecordBtn.setText("⏺️ Stop Recording");
-            refreshSessionState();
-        } else {
-            controller.stopAutoRecording();
-            autoRecordBtn.setText("🔴 Start Recording");
-            refreshSessionState();
-            refreshMacroList();
-        }
-    }
-
-    private void onPlaySelected() {
-        Macro sel = macroJList.getSelectedValue();
-        if (sel == null) {
-            JOptionPane.showMessageDialog(this, "Select a macro first.");
-            return;
-        }
-
-        // gather settings from UI
-        int delayMs = safeInt(delayField.getText(), 100);
-
-        if (cyclesRadio.isSelected()) {
-            int cycles = safeInt(cyclesField.getText(), 10);
-            // call controller to play macro in background
-            startBackgroundTask(() -> controller.playMacroCycles(sel.getId(), cycles, delayMs));
-        } else {
-            int seconds = safeInt(timeField.getText(), 5);
-            startBackgroundTask(() -> controller.playMacroForTime(sel.getId(), seconds, delayMs));
-        }
-    }
-
-    private void onStopBackground() {
-        if (runningTask != null && !runningTask.isDone()) {
-            runningTask.cancel(true);
-            stopPlayBtn.setEnabled(false);
-            playBtn.setEnabled(true);
-        }
-    }
-
-    private void onDeleteSelected() {
-        Macro sel = macroJList.getSelectedValue();
-        if (sel == null) return;
-        int ok = JOptionPane.showConfirmDialog(this, "Delete macro '" + sel.getName() + "'?", "Confirm", JOptionPane.YES_NO_OPTION);
-        if (ok == JOptionPane.YES_OPTION) {
-            controller.deleteMacro(sel.getId());
-            refreshMacroList();
-        }
-    }
-
-    private void refreshMacroList() {
-        List<Macro> macros = controller.listMacros();
-        SwingUtilities.invokeLater(() -> {
-            macroListModel.clear();
-            for (Macro m : macros) macroListModel.addElement(m);
-        });
-    }
-
-    private void refreshSessionState() {
-        boolean active = controller.isSessionActive();
-        sessionStateLabel.setText("Session: " + (active ? "active" : "inactive"));
-    }
-
-    private void startBackgroundTask(Runnable task) {
-        // Disable play button while running
-        playBtn.setEnabled(false);
-        stopPlayBtn.setEnabled(true);
-        runningTask = executor.submit(() -> {
-            try {
-                task.run();
-            } catch (CancellationException e) {
-                // cancelled by user
-            } catch (Exception ex) {
-                SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, "Background task error: " + ex.getMessage()));
-            } finally {
-                SwingUtilities.invokeLater(() -> {
-                    playBtn.setEnabled(true);
-                    stopPlayBtn.setEnabled(false);
-                });
+            default -> {
+                break;
             }
-        });
-    }
-
-    private int safeInt(String s, int fallback) {
-        try {
-            return Integer.parseInt(s.trim());
-        } catch (Exception e) {
-            return fallback;
         }
     }
 
-    // Custom cell renderer to show helpful macro info
-    private static class MacroCellRenderer extends JLabel implements ListCellRenderer<Macro> {
-        MacroCellRenderer() {
-            setOpaque(true);
-            setBorder(new EmptyBorder(6, 6, 6, 6));
+
+    // Custom Renderer
+    private static class MacroCellRenderer extends JPanel implements ListCellRenderer<Macro> {
+        private final JLabel title = new JLabel();
+
+        public MacroCellRenderer() {
+            setLayout(new BorderLayout());
+            setBorder(new EmptyBorder(10, 10, 10, 10));
+            add(title, BorderLayout.CENTER);
         }
 
         @Override
         public Component getListCellRendererComponent(JList<? extends Macro> list, Macro value, int index, boolean isSelected, boolean cellHasFocus) {
-            setText(String.format("%s — %s", value.getName(), value.getSummary()));
-            setFont(getFont().deriveFont(14f));
+            title.setText(value.getName());
+
             if (isSelected) {
-                setBackground(new Color(0xDCEFFC));
+                setBackground(new Color(0xEFF6FF));
+                setBorder(BorderFactory.createLineBorder(new Color(0x60A5FA), 2));
+                title.setForeground(Color.BLACK);
             } else {
                 setBackground(Color.WHITE);
+                setBorder(new EmptyBorder(10, 10, 10, 10));
+                title.setForeground(Color.DARK_GRAY);
             }
             return this;
         }
     }
 
-    @Override
-    public void nativeKeyPressed(NativeKeyEvent e) {
-        int code = e.getKeyCode();
-        // GLOBAL HOTKEY TO STOP
-        if (code == NativeKeyEvent.VC_F9) {
-            onAutoRecordToggle();
+    private void displayMacroDetails(Macro macro) {
+        if (macro == null) {
+            clearLogText();
+            return;
         }
-        if(code == NativeKeyEvent.VC_ESCAPE) {
-            onStopBackground();
+        setLogText(macro.detailedString());
+
+    }
+
+
+    // API for Controller --------------------------------------
+
+    public void setMacros(List<Macro> macros) {
+        macroListModel.clear();
+        macros.forEach(macroListModel::addElement);
+    }
+
+    public void addMacro(Macro macro) {
+        macroListModel.addElement(macro);
+    }
+
+    public void removeMacro(Macro macro) {
+        macroListModel.removeElement(macro);
+    }
+
+    public void appendLog(String msg) {
+        consoleArea.append(msg + " ");
+    }
+
+    public void setLogText(String msg) {
+        consoleArea.setText(msg);
+    }
+
+    public void clearLogText() {
+        consoleArea.setText(null);
+    }
+
+    public void setRecordingState(boolean recording) {
+        if (recording) {
+            stateBanner.setText("● Recording");
+            stateBanner.setBackground(new Color(0xFEE2E2));
+            stateBanner.setForeground(new Color(0xDC2626));
+        } else {
+            stateBanner.setText("● Idle");
+            stateBanner.setBackground(Color.WHITE);
+            stateBanner.setForeground(new Color(0x475569));
         }
     }
+
+    public JButton getRecordButton() {
+        return recordBtn;
+    }
+
+    public JButton getPlayButton() {
+        return playBtn;
+    }
+
+    public JButton getDeleteButton() {
+        return deleteBtn;
+    }
+
+    public JList<Macro> getMacroList() {
+        return macroList;
+    }
 }
-
-
-
-
-
-/* ==========================
- * Model classes
- * ==========================
- */
-
-
-
-
-/*
- * End of file
- */
