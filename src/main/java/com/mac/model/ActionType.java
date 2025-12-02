@@ -1,4 +1,4 @@
-package com.mac;
+package com.mac.model;
 
 public enum ActionType {
     CLICK,MOVE,RELEASE,PRESSED

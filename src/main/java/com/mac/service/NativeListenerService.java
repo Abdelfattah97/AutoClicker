@@ -12,9 +12,9 @@ public class NativeListenerService {
     private static NativeListenerService nativeListenerService;
 
     private NativeListenerService() {
-        isNativeHookRegistered = true;
         try {
             GlobalScreen.registerNativeHook();
+            isNativeHookRegistered = true;
         } catch (NativeHookException e) {
             throw new RuntimeException(e);
         }

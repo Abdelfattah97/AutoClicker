@@ -1,4 +1,4 @@
-package com.mac;
+package com.mac.service;
 
 public interface Observable<Event> {
 

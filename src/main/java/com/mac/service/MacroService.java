@@ -2,32 +2,29 @@ package com.mac.service;
 
 
 import com.github.kwhat.jnativehook.NativeHookException;
-import com.mac.ActionType;
-import com.mac.MacroAction;
-import com.mac.MacroRecorder;
-import com.mac.Observer;
+import com.mac.model.ActionType;
 import com.mac.model.Macro;
+import com.mac.model.MacroAction;
 
 import java.awt.*;
 import java.awt.event.InputEvent;
 import java.util.*;
 import java.util.List;
 
-/* ==========================
- * Service Layer (business logic)
- * - Holds session state, macros, and plays macros using Robot
- * - In a real implementation this would hook global keyboard/mouse hooks
- * ==========================
- */
+
 public class MacroService {
     private volatile boolean sessionActive = false;
-//    private volatile boolean recording = false;
 
     private final Map<UUID, Macro> macros = new LinkedHashMap<>();
     private volatile MacroRecorder recorder;
 
+
+    private volatile AutoClickExecuterService executerService;
+
     public MacroService() {
         this.recorder = new MacroRecorder();
+        this.executerService = new AutoClickExecuterService() {
+        };
     }
 
     public boolean isSessionActive() {
@@ -57,7 +54,7 @@ public class MacroService {
 
     public void startAutoRecording() {
         try {
-          recorder.startRecording("RecordedMacro-" + (macros.size() + 1));
+            recorder.startRecording("RecordedMacro-" + (macros.size() + 1));
         } catch (NativeHookException e) {
             throw new RuntimeException(e);
         }
@@ -77,7 +74,7 @@ public class MacroService {
         macros.remove(macroId);
     }
 
-    public void playMacroCycles(UUID macroId, int cycles, int delayMs) {
+    private void playMacroCycles(UUID macroId, int cycles, int delayMs) {
         Macro m = macros.get(macroId);
         if (m == null) return;
         try {
@@ -100,7 +97,7 @@ public class MacroService {
         }
     }
 
-    public void playMacroForTime(UUID macroId, int seconds, int delayMs) {
+    private void playMacroForTime(UUID macroId, int seconds, int delayMs) {
         Macro m = macros.get(macroId);
         if (m == null) return;
         long end = System.currentTimeMillis() + seconds * 1000L;
@@ -122,11 +119,31 @@ public class MacroService {
         }
     }
 
+    public void executeMacroCycles(UUID macroId, int cycles, int delayMs) {
+        executerService.startBackgroundTask(() -> playMacroCycles(macroId, cycles, delayMs));
+    }
+
+    public void executeMacroForTime(UUID macroId, int seconds, int delayMs) {
+        executerService.startBackgroundTask(() -> playMacroForTime(macroId, seconds, delayMs));
+    }
+
+    public void stopRunningMacro() {
+        executerService.stopBackgroundTask();
+    }
+
     public Macro getMacroByID(String uuid) {
         return macros.get(UUID.fromString(uuid));
     }
 
-    public void subscribeForNewMacros(Observer<Macro> observer){
+    public void subscribeForNewMacros(Observer<Macro> observer) {
         recorder.addObserver(observer);
+    }
+
+    public void subscribeForMacroExecution(AutoClickExecuterObserver observer) {
+        executerService.addObserver(observer);
+    }
+
+    public boolean isPlaying() {
+        return executerService.isWorking();
     }
 }

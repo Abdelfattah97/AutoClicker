@@ -1,6 +1,7 @@
 package com.mac.controller;
 
-import com.mac.Observer;
+import com.mac.service.AutoClickExecuterObserver;
+import com.mac.service.MacroRecorderObserver;
 import com.mac.model.Macro;
 import com.mac.service.MacroService;
 
@@ -47,7 +48,8 @@ public class MacroController {
     public List<Macro> listMacros() {
         return service.listMacros();
     }
-    public Macro getMacroById(String uuid){
+
+    public Macro getMacroById(String uuid) {
         return service.getMacroByID(uuid);
     }
 
@@ -56,18 +58,30 @@ public class MacroController {
     }
 
     public void playMacroCycles(UUID macroId, int cycles, int delayMs) {
-        service.playMacroCycles(macroId, cycles, delayMs);
+        service.executeMacroCycles(macroId, cycles, delayMs);
     }
 
     public void playMacroForTime(UUID macroId, int seconds, int delayMs) {
-        service.playMacroForTime(macroId, seconds, delayMs);
+        service.executeMacroForTime(macroId, seconds, delayMs);
     }
-    public void subscribeForNewMacros(Observer<Macro> observer) {
+
+    public void subscribeForNewMacros(MacroRecorderObserver observer) {
         service.subscribeForNewMacros(observer);
+    }
+    public void subscribeForMacroExecution(AutoClickExecuterObserver observer) {
+        service.subscribeForMacroExecution(observer);
     }
 
     public void stopPlay() {
-//        service.stopPlay();
+        service.stopRunningMacro();
     }
+
+    public boolean isPalying() {
+        return service.isPlaying();
+    }
+
+//    public boolean isPlaying() {
+//        return service.isPlaying();
+//    }
 }
 

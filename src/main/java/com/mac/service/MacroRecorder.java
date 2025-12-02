@@ -1,4 +1,4 @@
-package com.mac;
+package com.mac.service;
 
 import com.github.kwhat.jnativehook.NativeHookException;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
@@ -6,13 +6,14 @@ import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseEvent;
 import com.github.kwhat.jnativehook.mouse.NativeMouseListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseMotionListener;
+import com.mac.model.ActionType;
 import com.mac.model.Macro;
-import com.mac.service.NativeListenerService;
+import com.mac.model.MacroAction;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class MacroRecorder implements NativeMouseListener, NativeMouseMotionListener, NativeKeyListener, Observable<Macro> {
+public class MacroRecorder implements NativeMouseListener, NativeMouseMotionListener, NativeKeyListener, MacroRecorderObservable {
     private final List<MacroAction> actions = new CopyOnWriteArrayList<>();
     private long lastTime;
     private boolean isRecording = false;
@@ -33,6 +34,7 @@ public class MacroRecorder implements NativeMouseListener, NativeMouseMotionList
         nativeListenerService.addNativeKeyListener(this);
 
         isRecording = true;
+
         macroName = name;
     }
 
@@ -120,4 +122,5 @@ public class MacroRecorder implements NativeMouseListener, NativeMouseMotionList
             observer.update(macro);
         }
     }
+
 }
