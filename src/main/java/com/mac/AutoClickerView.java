@@ -4,6 +4,9 @@ import com.formdev.flatlaf.FlatLightLaf;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
+import com.mac.ui.decorator.buttons.*;
+import com.mac.ui.decorator.statebanner.IdleStateBannerDecorator;
+import com.mac.ui.decorator.statebanner.RecordingStateBannerDecorator;
 import com.mac.controller.MacroController;
 import com.mac.model.Macro;
 import com.mac.model.AutoClickExecution;
@@ -15,6 +18,7 @@ import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import static com.mac.util.ParseUtil.safeInt;
 
@@ -23,11 +27,11 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
     private final DefaultListModel<Macro> macroListModel = new DefaultListModel<>();
     private final JList<Macro> macroList = new JList<>(macroListModel);
 
-    private final JButton recordBtn = new JButton("Record (F9)");
-    private final JButton playBtn = new JButton("Play (F8)");
+    private final JButton recordBtn = new JButton();
+    private final JButton playBtn = new JButton();
     private final JButton deleteBtn = new JButton();
 
-    private final JLabel stateBanner = new JLabel("● Idle", SwingConstants.CENTER);
+    private final JLabel stateBanner = new JLabel();
     private final JTextArea consoleArea = new JTextArea();
 
     private final MacroController macroController;
@@ -52,12 +56,13 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
     }
 
     private void initFrame() {
-        setTitle("AutoClicker Pro");
+        setTitle("AutoClicker");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(1100, 700);
+        setSize(800, 400);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
         getContentPane().setBackground(new Color(0xE2E8F0)); // slate-200
+        setIconImage(new FlatSVGIcon("icons/mouse.svg").getImage());
     }
 
     private void initHeader() {
@@ -73,7 +78,6 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         icon.setHorizontalAlignment(SwingConstants.CENTER);
         icon.setPreferredSize(new Dimension(48, 48));
         icon.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        icon.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
         // Text
         JPanel textPanel = new JPanel(new GridLayout(2, 1));
@@ -98,8 +102,8 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
 
     private void initBody() {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        split.setDividerSize(6);
-        split.setDividerLocation(350);
+        split.setDividerSize(3);
+        split.setDividerLocation(Double.valueOf(0.45 * getWidth()).intValue());
 
         split.setLeftComponent(buildMacroListPanel());
         split.setRightComponent(buildControlPanel());
@@ -129,15 +133,9 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         buttons.setBorder(new EmptyBorder(10, 0, 0, 0));
         buttons.setOpaque(false);
 
-        styleButton(recordBtn, new Color(0xFFFFFF), new Color(0xA8A8AF));
-        styleButton(playBtn, new Color(0x16A34A), Color.WHITE);
-
-        deleteBtn.setIcon(new FlatSVGIcon("icons/trash.svg", 20, 20));
-        deleteBtn.setOpaque(false);
-        deleteBtn.setBorder(null);
-        deleteBtn.setFocusPainted(false);
-        deleteBtn.setContentAreaFilled(false);
-        deleteBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        new StartRecButtonDecorator(recordBtn).decorate();
+        new PlayButtonDecorator(playBtn).decorate();
+        new DeleteButtonDecorator(deleteBtn).decorate();
 
         recordBtn.addActionListener(l -> {
             toggleRecord();
@@ -170,12 +168,12 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         if (!macroController.isRecording()) {
             // Start recording
             macroController.startAutoRecording();
-            recordBtn.setText("Stop (F9)");           // change text
-            setRecordingState(true);             // update banner
+            new StopRecButtonDecorator(recordBtn).decorate();
+            setRecordingState(true);            // update banner
         } else {
             // Stop recording
             macroController.stopAutoRecording();
-            recordBtn.setText("Record (F9)");         // revert text
+            new StartRecButtonDecorator(recordBtn).decorate();    // update banner
             setRecordingState(false);            // update banner
         }
     }
@@ -200,11 +198,9 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         boolean isPlaying = macroController.isPalying();
         System.out.println("isPlaying" + isPlaying);
         if (!isPlaying) {
-            this.playBtn.setText("Play (F8)");
-            styleButton(playBtn, new Color(0x16A34A), Color.WHITE);
+            new PlayButtonDecorator(playBtn).decorate();
         } else {
-            this.playBtn.setText("Stop (F8)");
-            styleButton(playBtn, new Color(0xA31630), Color.WHITE);
+            new StopButtonDecorator(playBtn).decorate();
         }
     }
 
@@ -299,11 +295,7 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
 
 
         // State Banner
-        stateBanner.setOpaque(false);
-        stateBanner.setBackground(Color.WHITE);
-        stateBanner.setForeground(new Color(0x475569));
-        stateBanner.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        stateBanner.setBorder(new EmptyBorder(10, 10, 10, 10));
+        new IdleStateBannerDecorator(stateBanner).decorate();
 
         JPanel bannerWrapper = new JPanel(new BorderLayout());
         bannerWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
@@ -324,15 +316,6 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
 
         panel.add(scroll);
         return panel;
-    }
-
-    private void styleButton(JButton btn, Color bg, Color fg) {
-        btn.setBackground(bg);
-        btn.setForeground(fg);
-        btn.setFocusPainted(false);
-        btn.setBorder(BorderFactory.createLineBorder(new Color(0xCBD5E1), 0));
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
     public void update(Macro e) {
@@ -428,13 +411,9 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
 
     public void setRecordingState(boolean recording) {
         if (recording) {
-            stateBanner.setText("● Recording");
-            stateBanner.setBackground(new Color(0xFEE2E2));
-            stateBanner.setForeground(new Color(0xDC2626));
+            new RecordingStateBannerDecorator(stateBanner).decorate();
         } else {
-            stateBanner.setText("● Idle");
-            stateBanner.setBackground(Color.WHITE);
-            stateBanner.setForeground(new Color(0x475569));
+            new IdleStateBannerDecorator(stateBanner).decorate();
         }
     }
 

@@ -8,12 +8,6 @@ import com.mac.service.MacroService;
 import java.util.List;
 import java.util.UUID;
 
-/* ==========================
- * Controller Layer (thin)
- * - Methods mirror what a REST controller might expose
- * - Delegates to MacroService
- * ==========================
- */
 public class MacroController {
     private final MacroService service;
 
@@ -28,10 +22,6 @@ public class MacroController {
     public void startManualSession() {
         service.startManualSession();
     }
-//
-//    public void stopManualSessionAndSave(String macroName) {
-//        service.stopManualSessionAndSave(macroName);
-//    }
 
     public boolean isRecording() {
         return service.isRecording();
@@ -79,9 +69,5 @@ public class MacroController {
     public boolean isPalying() {
         return service.isPlaying();
     }
-
-//    public boolean isPlaying() {
-//        return service.isPlaying();
-//    }
 }
 
