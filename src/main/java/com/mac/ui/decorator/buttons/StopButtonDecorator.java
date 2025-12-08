@@ -1,6 +1,7 @@
 package com.mac.ui.decorator.buttons;
 
 import com.formdev.flatlaf.extras.FlatSVGIcon;
+import com.mac.config.IconConfig;
 
 import javax.swing.*;
 import java.awt.*;
@@ -16,7 +17,8 @@ public class StopButtonDecorator extends ControlButtonDecorator {
         btn.setText("Stop (F8)");
         btn.setBackground(new Color(0xA31630));
         btn.setForeground(Color.WHITE);
-        FlatSVGIcon icon = new FlatSVGIcon("icons/black-square.svg",10,10);
+        var iconPath = IconConfig.getIconPathMap().get("stop-button");
+        FlatSVGIcon icon = new FlatSVGIcon(iconPath,10,10);
         var iconColor = btn.getForeground();
         icon.setColorFilter(new FlatSVGIcon.ColorFilter((s) -> iconColor));
         btn.setIcon(icon);

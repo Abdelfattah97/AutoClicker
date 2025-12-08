@@ -1,7 +1,7 @@
 package com.mac.controller;
 
-import com.mac.service.AutoClickExecuterObserver;
-import com.mac.service.MacroRecorderObserver;
+import com.mac.service.AutoClickExecutorObserver;
+import com.mac.recorder.MacroRecorderObserver;
 import com.mac.model.Macro;
 import com.mac.service.MacroService;
 
@@ -13,14 +13,6 @@ public class MacroController {
 
     public MacroController(MacroService service) {
         this.service = service;
-    }
-
-    public boolean isSessionActive() {
-        return service.isSessionActive();
-    }
-
-    public void startManualSession() {
-        service.startManualSession();
     }
 
     public boolean isRecording() {
@@ -58,7 +50,7 @@ public class MacroController {
     public void subscribeForNewMacros(MacroRecorderObserver observer) {
         service.subscribeForNewMacros(observer);
     }
-    public void subscribeForMacroExecution(AutoClickExecuterObserver observer) {
+    public void subscribeForMacroExecution(AutoClickExecutorObserver observer) {
         service.subscribeForMacroExecution(observer);
     }
 
@@ -66,7 +58,7 @@ public class MacroController {
         service.stopRunningMacro();
     }
 
-    public boolean isPalying() {
+    public boolean isPlaying() {
         return service.isPlaying();
     }
 }

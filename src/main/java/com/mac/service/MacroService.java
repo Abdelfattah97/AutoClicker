@@ -2,51 +2,34 @@ package com.mac.service;
 
 
 import com.github.kwhat.jnativehook.NativeHookException;
-import com.mac.model.ActionType;
+import com.mac.model.Action;
 import com.mac.model.Macro;
-import com.mac.model.MacroAction;
+import com.mac.recorder.MacroRecorder;
+import com.mac.simulator.EventSimulatorManager;
 
 import java.awt.*;
-import java.awt.event.InputEvent;
 import java.util.*;
 import java.util.List;
 
 
 public class MacroService {
-    private volatile boolean sessionActive = false;
 
     private final Map<UUID, Macro> macros = new LinkedHashMap<>();
-    private volatile MacroRecorder recorder;
+    private final MacroRecorder recorder;
+    private final EventSimulatorManager eventSimulatorManager;
 
-
-    private volatile AutoClickExecuterService executerService;
+    private final AutoClickExecutorService executorService;
 
     public MacroService() {
         this.recorder = new MacroRecorder();
-        this.executerService = new AutoClickExecuterService() {
+        this.executorService = new AutoClickExecutorService() {
         };
+        try {
+            this.eventSimulatorManager = new EventSimulatorManager();
+        } catch (AWTException e) {
+            throw new RuntimeException(e);
+        }
     }
-
-    public boolean isSessionActive() {
-        return sessionActive;
-    }
-
-    public void startManualSession() {
-        if (!sessionActive) sessionActive = true;
-    }
-
-//    public void stopManualSessionAndSave(String name) {
-//        if (!sessionActive) return;
-//        try {
-//            MacroRecorder recorder = new MacroRecorder();
-//            Macro macro = recorder.startRecording(name);
-//            macros.put(macro.getId(), macro);
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        } finally {
-//            sessionActive = false;
-//        }
-//    }
 
     public boolean isRecording() {
         return recorder != null && recorder.isRecording();
@@ -77,22 +60,19 @@ public class MacroService {
     private void playMacroCycles(UUID macroId, int cycles, int delayMs) {
         Macro m = macros.get(macroId);
         if (m == null) return;
+        int triggered=0;
         try {
-            Robot robot = new Robot();
+            System.out.println("Macro actions size: " + m.getActions().size());
             for (int c = 0; c < cycles; c++) {
-                for (MacroAction a : m.getActions()) {
+                for (Action a : m.getActions()) {
                     if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
-                    if (a.getX() >= 0) {
-                        robot.mouseMove(a.getX(), a.getY());
-                        if (a.actionType().equals(ActionType.CLICK) || a.actionType().equals(ActionType.PRESSED)) {
-                            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-                            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
-                        }
-                    }
-                    Thread.sleep(Math.max(1, a.getDelay()) + delayMs);
+                    triggered++;
+                    simulateAction(delayMs, a);
                 }
             }
+            System.out.println("Macro actions triggered: " + triggered);
         } catch (Exception e) {
+            e.printStackTrace();
             Thread.currentThread().interrupt();
         }
     }
@@ -102,33 +82,33 @@ public class MacroService {
         if (m == null) return;
         long end = System.currentTimeMillis() + seconds * 1000L;
         try {
-            Robot robot = new Robot();
             while (System.currentTimeMillis() < end) {
-                for (MacroAction a : m.getActions()) {
+                for (Action a : m.getActions()) {
                     if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
-                    if (a.getX() >= 0) {
-                        robot.mouseMove(a.getX(), a.getY());
-                        robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-                        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
-                    }
-                    Thread.sleep(Math.max(1, a.getDelay()) + delayMs);
+                    simulateAction(delayMs, a);
                 }
             }
         } catch (Exception e) {
+            e.printStackTrace();
             Thread.currentThread().interrupt();
         }
     }
 
+    private void simulateAction(int delayMs, Action a) throws InterruptedException {
+        eventSimulatorManager.simulate(a.event());
+        Thread.sleep(Math.max(1, a.getDelay()) + delayMs);
+    }
+
     public void executeMacroCycles(UUID macroId, int cycles, int delayMs) {
-        executerService.startBackgroundTask(() -> playMacroCycles(macroId, cycles, delayMs));
+        executorService.startBackgroundTask(() -> playMacroCycles(macroId, cycles, delayMs));
     }
 
     public void executeMacroForTime(UUID macroId, int seconds, int delayMs) {
-        executerService.startBackgroundTask(() -> playMacroForTime(macroId, seconds, delayMs));
+        executorService.startBackgroundTask(() -> playMacroForTime(macroId, seconds, delayMs));
     }
 
     public void stopRunningMacro() {
-        executerService.stopBackgroundTask();
+        executorService.stopBackgroundTask();
     }
 
     public Macro getMacroByID(String uuid) {
@@ -139,11 +119,11 @@ public class MacroService {
         recorder.addObserver(observer);
     }
 
-    public void subscribeForMacroExecution(AutoClickExecuterObserver observer) {
-        executerService.addObserver(observer);
+    public void subscribeForMacroExecution(AutoClickExecutorObserver observer) {
+        executorService.addObserver(observer);
     }
 
     public boolean isPlaying() {
-        return executerService.isWorking();
+        return executorService.isWorking();
     }
 }

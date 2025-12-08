@@ -10,14 +10,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-public abstract class AutoClickExecuterService implements AutoClickExecuterObservable {
+public abstract class AutoClickExecutorService implements AutoClickExecutorObservable {
 
     private Future runningTask;
 
-    private List<Observer<AutoClickExecution>> observerList;
+    private final List<Observer<AutoClickExecution>> observerList;
     private boolean isWorking = false;
 
-    public AutoClickExecuterService() {
+    public AutoClickExecutorService() {
         observerList = new ArrayList<>();
     }
 
@@ -32,9 +32,9 @@ public abstract class AutoClickExecuterService implements AutoClickExecuterObser
         runningTask = executor.submit(() -> {
             try {
                 task.run();
-            } catch (CancellationException e) {
-                // cancelled by user
+            } catch (CancellationException ignored) {
             } catch (Exception ex) {
+                ex.printStackTrace();
             }
             isWorking = false;
             notifyObservers(new AutoClickExecution(TaskStatus.FINISHED));

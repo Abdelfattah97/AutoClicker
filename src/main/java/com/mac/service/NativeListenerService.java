@@ -7,6 +7,7 @@ import com.github.kwhat.jnativehook.mouse.NativeMouseListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseMotionListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseWheelListener;
 
+@SuppressWarnings("FieldCanBeLocal")
 public class NativeListenerService {
     private static boolean isNativeHookRegistered = false;
     private static NativeListenerService nativeListenerService;

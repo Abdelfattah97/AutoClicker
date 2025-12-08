@@ -4,13 +4,21 @@ import com.formdev.flatlaf.FlatLightLaf;
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
+import com.mac.config.IconConfig;
+import com.mac.controller.MacroController;
+import com.mac.input.AwtKeyMapper;
+import com.mac.model.AutoClickExecution;
+import com.mac.model.EventSource;
+import com.mac.model.Macro;
+import com.mac.service.AutoClickExecutorObserver;
+import com.mac.recorder.MacroRecorderObserver;
+import com.mac.service.NativeListenerService;
+import com.mac.ui.components.HeaderPanel;
+import com.mac.ui.components.list.ConsoleCellRenderer;
 import com.mac.ui.decorator.buttons.*;
 import com.mac.ui.decorator.statebanner.IdleStateBannerDecorator;
 import com.mac.ui.decorator.statebanner.RecordingStateBannerDecorator;
-import com.mac.controller.MacroController;
-import com.mac.model.Macro;
-import com.mac.model.AutoClickExecution;
-import com.mac.service.*;
+import lombok.Getter;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -18,13 +26,18 @@ import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import java.util.Optional;
+
+import com.mac.model.Action;
 
 import static com.mac.util.ParseUtil.safeInt;
 
+@SuppressWarnings("FieldCanBeLocal")
 public class AutoClickerView extends JFrame implements NativeKeyListener {
 
     private final DefaultListModel<Macro> macroListModel = new DefaultListModel<>();
+    private final DefaultListModel<Action> actionListModel = new DefaultListModel<>();
+    @Getter
     private final JList<Macro> macroList = new JList<>(macroListModel);
 
     private final JButton recordBtn = new JButton();
@@ -32,22 +45,25 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
     private final JButton deleteBtn = new JButton();
 
     private final JLabel stateBanner = new JLabel();
-    private final JTextArea consoleArea = new JTextArea();
+    private final JList<Action> consoleArea = new JList<>(actionListModel);
 
     private final MacroController macroController;
 
+    @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
     private final List<ObserverHandler> observerHandlers;
+
+    private EventSource consoleFilter = null;
 
 
     public AutoClickerView(MacroController macroController, NativeListenerService nativeListenerService) {
         this.macroController = macroController;
         nativeListenerService.addNativeKeyListener(this);
         observerHandlers = new ArrayList<>();
-        var macroExecuterHandler = new AutoClickExecuterHandler(this);
+        var macroExecutorHandler = new AutoClickExecutorHandler(this);
         var macroRecorderHandler = new MacroRecorderHandler(this);
-        observerHandlers.addAll(List.of(macroExecuterHandler, macroRecorderHandler));
+        observerHandlers.addAll(List.of(macroExecutorHandler, macroRecorderHandler));
         macroController.subscribeForNewMacros(macroRecorderHandler);
-        macroController.subscribeForMacroExecution(macroExecuterHandler);
+        macroController.subscribeForMacroExecution(macroExecutorHandler);
         FlatLightLaf.setup();
         initFrame();
         initHeader();
@@ -62,42 +78,13 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
         getContentPane().setBackground(new Color(0xE2E8F0)); // slate-200
-        setIconImage(new FlatSVGIcon("icons/mouse.svg").getImage());
+        var iconPath = IconConfig.getIconPathMap().get("app-icon");
+        setIconImage(new FlatSVGIcon(iconPath).getImage());
+        setUndecorated(true);
     }
 
     private void initHeader() {
-        JPanel header = new JPanel(new BorderLayout());
-        header.setBackground(new Color(0x1E293B));
-        header.setBorder(BorderFactory.createEmptyBorder(14, 20, 14, 20));
-
-        // Icon
-        JLabel icon = new JLabel(new FlatSVGIcon("icons/mouse.svg", 24, 24));
-        icon.setOpaque(false);
-        icon.setBackground(new Color(0x2563EB));
-        icon.setForeground(Color.WHITE);
-        icon.setHorizontalAlignment(SwingConstants.CENTER);
-        icon.setPreferredSize(new Dimension(48, 48));
-        icon.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-
-        // Text
-        JPanel textPanel = new JPanel(new GridLayout(2, 1));
-        textPanel.setOpaque(false);
-
-        JLabel title = new JLabel("Auto Clicker");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
-        title.setForeground(Color.WHITE);
-
-        JLabel subtitle = new JLabel("Mouse Auto Clicker");
-        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        subtitle.setForeground(new Color(0x94A3B8));
-
-        textPanel.add(title);
-        textPanel.add(subtitle);
-
-        header.add(icon, BorderLayout.WEST);
-        header.add(textPanel, BorderLayout.CENTER);
-
-        add(header, BorderLayout.NORTH);
+        add(new HeaderPanel(this), BorderLayout.NORTH);
     }
 
     private void initBody() {
@@ -150,6 +137,7 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
             if (selected != null) {
                 macroController.deleteMacro(selected.getId());
                 macroListModel.removeElement(selected);
+                actionListModel.removeAllElements();
             }
         });
 
@@ -165,6 +153,7 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
     }
 
     private void toggleRecord() {
+        if (macroController.isPlaying()) return;
         if (!macroController.isRecording()) {
             // Start recording
             macroController.startAutoRecording();
@@ -183,7 +172,7 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
      * toggles the play feature both view and functionality
      */
     private void togglePlay() {
-        if (macroController.isPalying()) {
+        if (macroController.isPlaying()) {
             onStopPlay();
         } else {
             onPlaySelected();
@@ -195,8 +184,7 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
      * toggles the play btn only without functionality changes
      */
     private void updatePlayBtn() {
-        boolean isPlaying = macroController.isPalying();
-        System.out.println("isPlaying" + isPlaying);
+        boolean isPlaying = macroController.isPlaying();
         if (!isPlaying) {
             new PlayButtonDecorator(playBtn).decorate();
         } else {
@@ -279,11 +267,16 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         }
     }
 
-
     private void onSelectMacro(ListSelectionEvent e) {
         if (!e.getValueIsAdjusting()) { // avoid double events
-            Macro selected = macroList.getSelectedValue();
-            displayMacroDetails(selected);
+            addMacroActionsToModel(macroList.getSelectedValue());
+        }
+    }
+
+    private void addMacroActionsToModel(Macro macro) {
+        if (macro != null) {
+            actionListModel.removeAllElements();
+            actionListModel.addAll(macro.getActions());
         }
     }
 
@@ -292,7 +285,6 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         panel.setBackground(new Color(0xF8FAFC));
         panel.setBorder(new EmptyBorder(20, 20, 20, 20));
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-
 
         // State Banner
         new IdleStateBannerDecorator(stateBanner).decorate();
@@ -306,16 +298,43 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         panel.add(Box.createVerticalStrut(20));
 
         // Details Console
-        consoleArea.setEditable(false);
         consoleArea.setBackground(new Color(0x1E293B));
         consoleArea.setForeground(new Color(0x4ADE80));
         consoleArea.setFont(new Font("Consolas", Font.PLAIN, 13));
+        consoleArea.setCellRenderer(new ConsoleCellRenderer());
         JScrollPane scroll = new JScrollPane(consoleArea);
         scroll.setPreferredSize(new Dimension(0, 280));
         scroll.setBorder(BorderFactory.createLineBorder(new Color(0x334155), 1));
 
         panel.add(scroll);
+
+        JComboBox<String> filterBox = getFilterBox();
+
+        panel.add(filterBox);
+        panel.add(Box.createVerticalStrut(10));
+
         return panel;
+    }
+
+    private JComboBox<String> getFilterBox() {
+        String[] filterOptions = {"All", "Key Events", "Mouse Events"};
+        JComboBox<String> filterBox = new JComboBox<>(filterOptions);
+        filterBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+
+        filterBox.addActionListener(l -> {
+            switch (filterBox.getSelectedIndex()) {
+                case 1 -> consoleFilter = EventSource.KEY_EVENT;
+                case 2 -> consoleFilter = EventSource.MOUSE_EVENT;
+                default -> consoleFilter = null;
+            }
+
+            actionListModel.removeAllElements();
+            if (macroList.getSelectedValue() != null) {
+                actionListModel.addAll(macroList.getSelectedValue().getActions()
+                        .stream().filter(this::isFilteredAction).toList());
+            }
+        });
+        return filterBox;
     }
 
     public void update(Macro e) {
@@ -328,18 +347,14 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
 
     @Override
     public void nativeKeyPressed(NativeKeyEvent nativeEvent) {
-        System.out.println(nativeEvent.getKeyCode());
         switch (nativeEvent.getKeyCode()) {
             case NativeKeyEvent.VC_F8 -> {
                 togglePlay();
-                break;
             }
             case NativeKeyEvent.VC_F9 -> {
                 toggleRecord();
-                break;
             }
             default -> {
-                break;
             }
         }
     }
@@ -372,13 +387,12 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         }
     }
 
-    private void displayMacroDetails(Macro macro) {
-        if (macro == null) {
-            clearLogText();
-            return;
-        }
-        setLogText(macro.detailedString());
-
+    private boolean isFilteredAction(Action a) {
+        return consoleFilter == null || Optional.ofNullable(a)
+                .map(Action::getEvent)
+                .map(AwtKeyMapper::getSource)
+                .map(e -> e.equals(consoleFilter))
+                .orElse(false);
     }
 
 
@@ -397,18 +411,6 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         macroListModel.removeElement(macro);
     }
 
-    public void appendLog(String msg) {
-        consoleArea.append(msg + " ");
-    }
-
-    public void setLogText(String msg) {
-        consoleArea.setText(msg);
-    }
-
-    public void clearLogText() {
-        consoleArea.setText(null);
-    }
-
     public void setRecordingState(boolean recording) {
         if (recording) {
             new RecordingStateBannerDecorator(stateBanner).decorate();
@@ -417,29 +419,13 @@ public class AutoClickerView extends JFrame implements NativeKeyListener {
         }
     }
 
-    public JButton getRecordButton() {
-        return recordBtn;
-    }
-
-    public JButton getPlayButton() {
-        return playBtn;
-    }
-
-    public JButton getDeleteButton() {
-        return deleteBtn;
-    }
-
-    public JList<Macro> getMacroList() {
-        return macroList;
-    }
-
     private interface ObserverHandler {
     }
 
-    private static class AutoClickExecuterHandler implements AutoClickExecuterObserver, ObserverHandler {
+    private static class AutoClickExecutorHandler implements AutoClickExecutorObserver, ObserverHandler {
         public final AutoClickerView autoClickerView;
 
-        private AutoClickExecuterHandler(AutoClickerView autoClickerView) {
+        private AutoClickExecutorHandler(AutoClickerView autoClickerView) {
             this.autoClickerView = autoClickerView;
         }
 
