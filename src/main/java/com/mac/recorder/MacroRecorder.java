@@ -43,6 +43,7 @@ public class MacroRecorder implements NativeMouseListener, NativeMouseMotionList
         nativeListenerService.addNativeKeyListener(this);
 
         isRecording = true;
+        lastTime = System.currentTimeMillis();
 
         macroName = name;
     }
@@ -116,7 +117,7 @@ public class MacroRecorder implements NativeMouseListener, NativeMouseMotionList
         Macro macro = new Macro(macroName, actions);
         macroName = null;
         isRecording = false;
-        lastTime = 0;
+        lastTime = System.currentTimeMillis();
         notifyObservers(macro);
         return macro;
     }
